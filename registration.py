@@ -18,3 +18,6 @@ class RegistrationPayload(object):
             __dict__.update(json_o["__registration__"])
         except:
             self.failed_registration = True
+
+
+        

@@ -9,7 +9,9 @@ class DeckDecoder(json.JSONEncoder):
         return {
             '__type__': 'deck',
             '__deck__': {
-                'is_visible': o.is_visible
+                'is_visible': o.is_visible,
+                'cards': json.dumps([card.dump() for card in o.cards]),
+                'card_count': o.card_count
             }
         }
 
@@ -37,5 +39,12 @@ class Deck(object):
                 return card
         return None
 
+    def add_card_top(self, card):
+        return self.cards.insert(0, card)
+        
+
     def pull_card(self):
-        random.choice(self.cards)
+        return self.cards.pop(random.randrange(len(self.cards)))
+
+    def dump(self):
+        return json.dumps(self, indent=4, cls=DeckDecoder)

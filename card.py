@@ -14,12 +14,13 @@ class CardEncoder(json.JSONEncoder):
 
 
 class Card(object):
-    def __init__(self, letter, type):
+    def __init__(self, letter, type, value):
         self.type = type
         self.letter = letter
+        self.value = value
 
     def is_card(self, letter, type):
         return self.letter == letter and self.type == type
 
-    def dump():
+    def dump(self):
         return json.dumps(self, indent=4, cls=CardEncoder)
