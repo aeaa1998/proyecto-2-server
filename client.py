@@ -6,7 +6,8 @@ class ClientEncoder(json.JSONEncoder):
             '__type__': "client",
             '__client__': {
                 "lives": o.lives,
-                "cards": [card.dump() for card in o.cards],
+                "order": o.order,
+                "cards": [card.toJson() for card in o.cards],
                 "is_dealer": o.is_dealer
             }
         }
@@ -64,23 +65,46 @@ class Client(object):
             if card.letter == _card.letter and card.type == _card.type:
                 self.cards.remove(card)
     
-    def add_card(self, card):
+    async def add_card(self, card):
         self.cards.append(card)
+        await self.connection.send(
+            json.dumps({
+                "__type__": "new_card",
+                "__card__": card.toJson()["__card__"]
+            })
+        )
 
-    def send(self, message):
-        self.connection.send(message)
+    async def send(self, message):
+        await self.connection.send(message)
 
-    def send_prescence(self):
+    async def send_logged(self):
+        await self.connection.send(
+            json.dumps({
+                "__type__": "logged"
+            })
+        )
+
+    async def send_prescence(self):
         client_dump = self.dump()
-        self.connection.send(client_dump)
+        await self.connection.send(client_dump)
 
-    def send_life_prescence(self, encoder):
+    async def send_life_prescence(self, encoder):
         dump = json.dumps(self, indent=4, cls=encoder)
-        self.connection.send(dump)
+        await self.connection.send(dump)
 
-    def send_can_pull_card(self):
+    async def send_can_pull_card(self):
         dump = json.dumps(ClientCanPullCard, indent=4)
-        self.connection.send(dump)
+        await self.connection.send(dump)
+
+    def toJson(self):
+        return {
+            "lives": self.lives,
+            "order": self.order,
+            "cards": [card.toJson() for card in self.cards],
+            "is_dealer": self.is_dealer,
+            "username": self.username
+        }
+    
 
     def dump(self):
         return json.dumps(self, indent=4, cls=ClientEncoder)

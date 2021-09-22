@@ -10,7 +10,7 @@ class DeckDecoder(json.JSONEncoder):
             '__type__': 'deck',
             '__deck__': {
                 'is_visible': o.is_visible,
-                'cards': json.dumps([card.dump() for card in o.cards]),
+                'cards': json.dumps([card.toJson() for card in o.cards]),
                 'card_count': o.card_count
             }
         }
@@ -18,12 +18,16 @@ class DeckDecoder(json.JSONEncoder):
 
 class Deck(object):
     def __init__(self, cards=generate_maze(), is_visible=False):
-        self.cards = cards
-        self._initial_cards = cards
+        copy = cards.copy()
+        random.shuffle(copy)
+        self.cards = copy
+        self._initial_cards = copy.copy()
         self.is_visible = is_visible
 
     def reset_cards(self):
-        self.cards = self._initial_cards.copy()
+        copy = self._initial_cards.copy()
+        random.shuffle(copy)
+        self.cards = copy
 
     @property
     def card_count(self):
@@ -43,8 +47,21 @@ class Deck(object):
         return self.cards.insert(0, card)
         
 
-    def pull_card(self):
-        return self.cards.pop(random.randrange(len(self.cards)))
+    def pull_card(self, index=None):
+        _index = index
+        if _index is None:
+            _index = random.randrange(len(self.cards))
+        return self.cards.pop(_index)
 
+
+    def toJson(self):
+        return{
+            '__type__': 'deck',
+            '__deck__': {
+                'is_visible': self.is_visible,
+                'cards': json.dumps([card.toJson() for card in self.cards]),
+                'card_count': self.card_count
+            }
+        }
     def dump(self):
         return json.dumps(self, indent=4, cls=DeckDecoder)

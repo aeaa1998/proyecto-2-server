@@ -1,3 +1,4 @@
+from chat import Chat
 from client_turn import ClientTurnDispatcher
 from client import Client, ClientDiedEncoder, ClientLostLifeEncoder, ClientReviveEncoder, ClientSavedEncoder
 from deck import Deck
@@ -12,10 +13,11 @@ class RoomEncoder(json.JSONEncoder):
             '__type__': "room",
             '__room__': {
                 'id': o.id,
-                'deck': o.deck.dump(),
-                'visible_deck': o.visible_deck.dump(),
+                'deck': o.deck.toJson(),
+                'visible_deck': o.visible_deck.toJson(),
                 'started': o.started,
                 "current_turn": o.current_turn,
+                "start_count": o.start_count,
                 # If hand_turn is present there is only one row left
                 'hand_turn': o.hand_turn
             },
@@ -33,7 +35,7 @@ class RoomFinished(json.JSONEncoder):
     def default(self, o):
         return {
             '__type__': "room_finished",
-            '__winner__': o.clients[0]
+            '__winner__': o.clients[0].toJson()
         }
 
 
@@ -49,6 +51,7 @@ class Room(object):
         self.current_turn = None
         self.hand_turn = None
         self.client_turn_dispatcher = ClientTurnDispatcher(room=self)
+        self.chats = []
     
     # Only alive clients will be shown in here
     @property
@@ -67,20 +70,31 @@ class Room(object):
                 return self.dealer.order - 1
 
     # Add a client to the array
-    def add_client(self, username, conn):
+    async def add_client(self, username, conn):
         client_to_add = Client(self.id, username, len(self._clients) + 1, conn)
         self._clients.append(client_to_add)
+        room_dump = self.dump(RoomEncoder)
+        await client_to_add.send(room_dump)
+        await client_to_add.send_prescence()
         return client_to_add
 
     def dump(self, encoder = RoomEncoder):
         return json.dumps(self, indent=4, cls=encoder)
 
-    def dump_clients(self, encoder = RoomEncoder):
+    async def send_chat(self, username, message):
+        chat = Chat(username, message)
+        chat_dump = chat.dump()
+        for client in self._clients:
+            if client.username != username:
+                await client.send(chat_dump)
+
+    async def dump_clients(self, encoder = RoomEncoder):
         room_dump = self.dump(encoder)
         for client in self._clients:
-            client.send(room_dump)
+            await client.send(room_dump)
 
-    def start_game(self):
+    async def start_game(self):
+        self.start_count+=1
         clients_count = len(self._clients)
         self.started = (self.start_count == clients_count) and clients_count >= 3
         #Check if it started so notify all players
@@ -91,38 +105,43 @@ class Room(object):
                     initial_maze = [self.pull_card_from_deck(),self.pull_card_from_deck(),self.pull_card_from_deck()]
                     # We set the initial maze for the client
                     client.cards = initial_maze
-                    client.send_prescence()
+                    await client.send_prescence()
             first_visible_card = self.pull_card_from_deck()
             self.visible_deck.add_card_top(first_visible_card)
             self.current_turn = self.initial_turn
-            self.dump_clients()
+            await self.dump_clients()
         else:
             # We must update the counter to everyone
             room_dump = self.dump(encoder=RoomUpdateCountEncoder)
             for client in self._clients:
-                client.connection.send(room_dump)
+                await client.connection.send(room_dump)
     
-    def reset_count(self, client):
+    async def reset_count(self, client):
         #Notify all players they must ask again to start
         self.start_count = 0
         room_dump = self.dump()
         for c in self._clients:
             #The player that said no already knows that the game does not need to be restarted
             if c.username != client.usermane:
-                c.connection.send(room_dump)
+                await c.connection.send(room_dump)
 
 
 
     # Set new client order
     def set_client_order(self):
-        for index, client in self.clients:
+        for index, client in enumerate(self.clients):
             client.order = index + 1
 
-    def reset_row(self):
+    async def reset_row(self):
         self.visible_deck.reset_cards()
         self.deck.reset_cards()
         self.current_turn = self.initial_turn
+        if self.current_turn == 1:
+            self.current_turn = len(self.clients)
+        else:
+            self.current_turn -= 1
         self.hand_turn = None
+        print("cleaned")
         for client in self.clients:
             client.reset(False)
             initial_maze = [self.pull_card_from_deck(),self.pull_card_from_deck(),self.pull_card_from_deck()]
@@ -133,11 +152,14 @@ class Room(object):
         first_visible_card = self.pull_card_from_deck()
         self.visible_deck.add_card_top(first_visible_card)
         for client in self.clients:
-            client.send_prescence()
-        self.dump_clients()
+            print("sending prescence")
+            await client.send_prescence()
+            
+        await self.dump_clients()
+        print("sending room")
 
     # Restart the room to its original form
-    def reset_room(self):
+    async def reset_room(self):
         self.visible_deck.reset_cards()
         self.deck.reset_cards()
         self.start_count = 0
@@ -145,12 +167,13 @@ class Room(object):
         room_dump = self.dump()
         self.current_turn = None
         self.hand_turn = None
+        print("vars reset")
         for client in self._clients:
             client.reset()
         self.set_client_order()
         for client in self.clients:
             client.connection.send(room_dump)
-            client.send_prescence()
+            await client.send_prescence()
 
     def remove_client(self, username):
         for client in self._clients:
@@ -158,15 +181,17 @@ class Room(object):
                 self._clients.remove(client)
                 return
 
-    def process_hand(self):
+    async def process_hand(self):
         if self.hand_turn is None:
             self.hand_turn = self.current_turn
+            self.next_turn()
+            await self.dump_clients()
         else:
             next_turn = (self.current_turn % len(self.clients)) +  1
             # If next turn we finish
             if next_turn == self.hand_turn:
                 # We finish the round
-                lowest_value = 0
+                lowest_value = 30
                 for client in self.clients:
                     if lowest_value > client.hand.value:
                         lowest_value = client.hand.value
@@ -178,27 +203,31 @@ class Room(object):
                             client.lives -= 2
                         else:
                             client.lives -= 1
-                        client.send_life_prescence(ClientLostLifeEncoder)
+                        await client.send_life_prescence(ClientLostLifeEncoder)
                         if client.lives <= 0:
                             died_clients.append(client)
-                            # client.send_life_prescence(ClientDiedEncoder)
+                            
                     else:
-                        client.send_life_prescence(ClientSavedEncoder)
+                        await client.send_life_prescence(ClientSavedEncoder)
 
                 # Everyone is dead so all the ones that died will be revived with 1 live
                 if len(self.clients) == 0:
                     for dead_client in died_clients:
-                        dead_client.send_life_prescence(ClientReviveEncoder)
+                        await dead_client.send_life_prescence(ClientReviveEncoder)
                         dead_client.lives = 1
                 # Game finished
                 elif len(self.clients) == 1:
-                    self.dump_clients(RoomFinished)
-                    self.reset_room()
+                    await self.dump_clients(RoomFinished)
+                    await self.reset_room()
                 # We proceed to the next round with the remaining 
                 else:
-                    self.reset_row()
+                    # Notify the dead clients
+                    for dead_client in died_clients:
+                        await client.send_life_prescence(ClientDiedEncoder)
+                    await self.reset_row()
             else:
                 self.next_turn()
+                await self.dump_clients()
 
                         
                         
@@ -211,13 +240,13 @@ class Room(object):
         self.dealer = random.choice(self.clients)
         self.dealer.is_dealer = True
 
-    def process_turn(self, turn_json):
-        self.client_turn_dispatcher.process(turn_json)
+    async def process_turn(self, turn_json):
+        await self.client_turn_dispatcher.process(turn_json)
 
     def pull_card_from_deck(self, deck="deck"):
         if deck == "deck":
             return self.deck.pull_card()
-        return self.visible_deck.pull_card()
+        return self.visible_deck.pull_card(0)
 
     def room_filled_payload(self):
         return json.dumps({ '__type__': 'room_filled' }, indent=4)

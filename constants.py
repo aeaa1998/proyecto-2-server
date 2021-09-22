@@ -2,10 +2,10 @@ from card import Card
 
 
 CARD_LETTERS = [
-    "A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1"
+    "A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"
 ]
 
-CARD_TYPES = ["heart", "clubs", "spades", "diamonds"]
+CARD_TYPES = ["hearts", "clubs", "spades", "diamonds"]
 
 CARD_VALUES = {
     11: ["A"],

@@ -15,7 +15,8 @@ class RegistrationPayload(object):
         self.failed_registration = False
         try:
             json_o = json.loads(json_serialization)
-            __dict__.update(json_o["__registration__"])
+            self.__dict__.update(json_o["__registration__"])
+            print(json_o)
         except:
             self.failed_registration = True
 
