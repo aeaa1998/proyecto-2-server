@@ -7,10 +7,7 @@ from room import Room
 from registration import RegistrationPayload
 from typing import cast
 from error import ErrorResponse
-import socket
-import select
 import sys
-from _thread import *
 from threading import Thread
 import websockets
 import asyncio
