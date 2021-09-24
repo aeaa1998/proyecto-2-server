@@ -14,21 +14,25 @@ class EndedTurn(object):
         await room.dump_clients()
         print("Notified users for next turn")
 
+
 class DiscardedCard(object):
     def __init__(self, turn_json):
-        self.card = Card(letter=turn_json["letter"], type=turn_json["card_type"], value=find_card_value(turn_json["letter"]))
+        self.card = Card(letter=turn_json["letter"], type=turn_json["card_type"], value=find_card_value(
+            turn_json["letter"]))
         self.client_username = turn_json["username"]
 
     async def process(self, room):
         client = room.find_client(self.client_username)
-        client.discard_card(self.card)
-        # Update the new decks
-        room.visible_deck.add_card_top(self.card)
-        # # Next turn is allowed
-        # room.next_turn()
-        # Notify users that the room decks have changed
-        await room.dump_clients()
-        print("Notified users for decks")
+        if client.order == room.current_turn:
+            client.discard_card(self.card)
+            # Update the new decks
+            room.visible_deck.add_card_top(self.card)
+            # # Next turn is allowed
+            # room.next_turn()
+            # Notify users that the room decks have changed
+            await room.dump_clients()
+            print("Notified users for decks")
+
 
 class AskForCard(object):
     def __init__(self, turn_json):
@@ -37,13 +41,14 @@ class AskForCard(object):
 
     async def process(self, room):
         client = room.find_client(self.client_username)
-        new_card = room.pull_card_from_deck(self.deck)
-        # Update the new information of the client
-        await client.add_card(new_card)
-        # await client.send_prescence()
-        # Update the new decks
-        await room.dump_clients()
-        # await client.send_can_pull_card()
+        if client.order == room.current_turn:
+            new_card = room.pull_card_from_deck(self.deck)
+            # Update the new information of the client
+            await client.add_card(new_card)
+            # await client.send_prescence()
+            # Update the new decks
+            await room.dump_clients()
+            # await client.send_can_pull_card()
 
 
 class ClientHand(object):
@@ -52,12 +57,12 @@ class ClientHand(object):
         # Incase the json is sent as an string
         if isinstance(c_j, str):
             c_j = json.loads(c_j)
-        
 
-        self.cards =  [Card(letter=card["letter"], type=card["type"], value=find_card_value(card["letter"])) for card in c_j]
+        self.cards = [Card(letter=card["letter"], type=card["type"],
+                           value=find_card_value(card["letter"])) for card in c_j]
         self.client_username = turn_json["username"]
         self.value = self.get_hand_value()
-    
+
     def get_hand_value(self):
         if len(self.cards) > 1:
             letter = self.cards[0].letter
@@ -79,7 +84,8 @@ class ClientHand(object):
         client.hand = self
         print(client.username)
         print(client.hand.value)
-        await room.process_hand()
+        if client.order == room.current_turn:
+            await room.process_hand()
 
 
 class ClientTurnDispatcher(object):
@@ -97,9 +103,8 @@ class ClientTurnDispatcher(object):
         elif turn_json["type"] == "end_turn":
             return EndedTurn()
         return None
-        
+
     async def process(self, turn_json):
         response = self.deserialize(turn_json)
         if response is not None:
             await response.process(self.room)
-        
