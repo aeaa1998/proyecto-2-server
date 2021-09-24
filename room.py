@@ -176,7 +176,7 @@ class Room(object):
             client.reset()
         self.set_client_order()
         for client in self.clients:
-            client.connection.send(room_dump)
+            await client.connection.send(room_dump)
             await client.send_prescence()
 
     def remove_client(self, username):
@@ -208,7 +208,7 @@ class Room(object):
                 if there_is_draw:
                     for client in self.clients:
                         await client.send_life_prescence(ClientSavedEncoder)
-                    await self.reset_room()
+                    await self.reset_row()
                 # Notify all losers
                 else:
                     for client in self.clients:
